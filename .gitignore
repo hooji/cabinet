@@ -30,9 +30,5 @@ next-env.d.ts
 # claude code
 .claude/
 
-# screenshots from dev tooling
-/screenshot.png
-/screenshots/
-
 # java build outputs
 java/target/

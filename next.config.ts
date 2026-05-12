@@ -19,7 +19,8 @@ function resolveAllowedDevOrigins(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: resolveAllowedDevOrigins(),
-  output: "standalone",
+  output: "export",
+  images: { unoptimized: true },
   devIndicators: false,
 };
 
