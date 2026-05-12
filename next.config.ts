@@ -17,11 +17,17 @@ function resolveAllowedDevOrigins(): string[] {
   return Array.from(origins);
 }
 
+// When AGENT_BRIDGE_STATIC=true, emit a fully self-contained export with
+// relative asset paths so the built `out/` can be opened directly via
+// file:// in a browser. The dev server (`npm run dev`) does not use this.
+const isFileServe = process.env.AGENT_BRIDGE_STATIC === "true";
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: resolveAllowedDevOrigins(),
   output: "export",
   images: { unoptimized: true },
   devIndicators: false,
+  assetPrefix: isFileServe ? "." : undefined,
 };
 
 export default nextConfig;
