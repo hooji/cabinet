@@ -47,9 +47,15 @@
     /* Rhythm — one knob to scale all vertical spacing */
     --md-block-gap: 1.15rem;
 
-    /* Typography */
-    --md-font-mono: var(--font-mono), ui-monospace, SFMono-Regular,
-      "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    /* Typography
+       Use a literal system-mono stack rather than var(--font-mono).
+       Under file:// in Safari, Next's font-loader CSS variable can
+       resolve to a value that Safari treats as invalid for the whole
+       font-family declaration, causing inline <code> to fall back to
+       the inherited body sans-serif. ui-monospace is the modern
+       cross-browser keyword (renders as SF Mono on macOS Safari). */
+    --md-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+      Consolas, "Liberation Mono", monospace;
 
     color: var(--md-text);
     background: transparent;          /* let the bubble's bg-muted show */
