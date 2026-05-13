@@ -6,7 +6,11 @@ package ai.agentbridge.api;
  * JSON-RPC notification over the live WebSocket connection(s).
  */
 public interface UI {
-    void onMessage(String conversationId, MessageRecord msg);
+    /**
+     * Push a new message into a conversation. The MessageRecord carries
+     * its conversationId, so the UI knows where to file it.
+     */
+    void onMessage(MessageRecord msg);
 
     void onStatusChange(String agentId, AgentState state, String reason);
 

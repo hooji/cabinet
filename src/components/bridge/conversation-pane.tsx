@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useAgentBridge } from "@/stores/agent-bridge-store";
 import { AgentStatusDot } from "./agent-status-dot";
 import { cn } from "@/lib/utils";
@@ -62,39 +65,39 @@ export function ConversationPane() {
 
   return (
     <section className="flex-1 flex flex-col h-full overflow-hidden">
-      <header className="border-b border-border px-5 py-3 flex items-center justify-between gap-4">
-        <div>
+      <header className="border-b border-border px-5 py-3">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold tracking-tight">
               {agent.name}
             </h2>
             <AgentStatusDot state={agent.state} showLabel />
           </div>
-          {agent.description && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {agent.description}
-            </p>
-          )}
+          <div className="flex items-center gap-1">
+            <DirectiveButton
+              label="Pause"
+              onClick={() => sendDirective(agent.id, "AGENT", "pause")}
+            />
+            <DirectiveButton
+              label="Resume"
+              onClick={() => sendDirective(agent.id, "AGENT", "resume")}
+            />
+            <DirectiveButton
+              label="Wake"
+              onClick={() => sendDirective(agent.id, "AGENT", "wake")}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <DirectiveButton
-            label="Pause"
-            onClick={() => sendDirective(agent.id, "AGENT", "pause")}
-          />
-          <DirectiveButton
-            label="Resume"
-            onClick={() => sendDirective(agent.id, "AGENT", "resume")}
-          />
-          <DirectiveButton
-            label="Wake"
-            onClick={() => sendDirective(agent.id, "AGENT", "wake")}
-          />
-        </div>
+        {agent.description && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {agent.description}
+          </p>
+        )}
       </header>
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto scrollbar-thin px-5 py-4 space-y-2"
+        className="flex-1 overflow-y-auto scrollbar-thin px-5 py-4 flex flex-col gap-3"
       >
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center pt-8">
@@ -102,7 +105,7 @@ export function ConversationPane() {
           </p>
         ) : (
           messages.map((m) => (
-            <MessageBubble key={m.id} message={m} fromMe={m.from === "user"} />
+            <Message key={m.id} message={m} fromMe={m.from === "user"} />
           ))
         )}
       </div>
@@ -120,7 +123,7 @@ export function ConversationPane() {
             }}
             placeholder={
               connectionState === "connected"
-                ? "Message…  (Enter to send, Shift-Enter for newline)"
+                ? "Message…  (Enter to send, Shift-Enter for newline; markdown supported)"
                 : "Waiting for connection…"
             }
             disabled={connectionState !== "connected"}
@@ -146,32 +149,115 @@ export function ConversationPane() {
   );
 }
 
-function MessageBubble({
+function Message({
   message,
   fromMe,
 }: {
   message: MessageRecord;
   fromMe: boolean;
 }) {
-  const ts = useMemo(() => formatTime(message.ts), [message.ts]);
   return (
     <div
       className={cn(
-        "max-w-[78%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
-        fromMe
-          ? "ml-auto bg-primary text-primary-foreground"
-          : "mr-auto bg-muted text-foreground",
+        "flex flex-col items-start max-w-[78%]",
+        fromMe ? "self-end" : "self-start",
       )}
     >
-      <p className="whitespace-pre-wrap leading-snug">{message.text}</p>
-      <p
-        className={cn(
-          "mt-1 text-[0.65rem] opacity-60",
-          fromMe ? "text-right" : "text-left",
-        )}
+      <div className="rounded-2xl bg-muted text-foreground px-3.5 py-2 text-sm shadow-sm w-full">
+        <MarkdownBubble text={message.text} />
+      </div>
+      <StatusLine ts={message.ts} text={message.text} />
+    </div>
+  );
+}
+
+const MD_COMPONENTS: Components = {
+  p: ({ children }) => <p className="leading-snug my-0.5 first:mt-0 last:mb-0">{children}</p>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-primary underline underline-offset-2"
+    >
+      {children}
+    </a>
+  ),
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  ul: ({ children }) => <ul className="list-disc pl-5 my-1 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 my-1 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li className="leading-snug">{children}</li>,
+  h1: ({ children }) => <h1 className="text-base font-semibold mt-1 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-semibold mt-1 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-border pl-3 my-1 text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  pre: ({ children }) => (
+    <pre className="rounded bg-background/60 px-2 py-1.5 my-1 text-xs overflow-x-auto">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children }) => {
+    const isBlock = className && /^language-/.test(className);
+    if (isBlock) return <code className={className}>{children}</code>;
+    return (
+      <code className="rounded bg-background/60 px-1 py-0.5 text-[0.85em] font-mono">
+        {children}
+      </code>
+    );
+  },
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-1">
+      <table className="border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-border px-2 py-1 align-top">{children}</td>
+  ),
+  hr: () => <hr className="my-2 border-border" />,
+};
+
+function MarkdownBubble({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      {text}
+    </ReactMarkdown>
+  );
+}
+
+function StatusLine({ ts, text }: { ts: number; text: string }) {
+  const time = useMemo(() => formatTime(ts), [ts]);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.warn("copy failed:", err);
+    }
+  }
+
+  return (
+    <div className="mt-1 flex items-center gap-1.5 text-[0.65rem] text-muted-foreground opacity-70">
+      <span>{time}</span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copied ? "Copied" : "Copy markdown"}
+        title={copied ? "Copied" : "Copy markdown"}
+        className="inline-flex items-center justify-center rounded p-0.5 hover:text-foreground hover:bg-muted transition-colors"
       >
-        {ts}
-      </p>
+        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
     </div>
   );
 }

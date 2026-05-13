@@ -96,22 +96,22 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
             return;
         }
         MessageRecord userMsg = new MessageRecord(
-                UUID.randomUUID().toString(), conversationId, "user", text, System.currentTimeMillis());
+                UUID.randomUUID().toString(), conversationId, "user", text);
         appendHistory(conversationId, userMsg);
-        ui.onMessage(conversationId, userMsg);
-        ui.onStatusChange(agentId, AgentState.LIVE, "thinking");
+        ui.onMessage(userMsg);
+        ui.onStatusChange(agentId, AgentState.ANSWERING, "composing reply");
 
         scheduler.schedule(() -> {
             try {
                 String reply = elizaRespond(agentId, text);
                 MessageRecord agentMsg = new MessageRecord(
-                        UUID.randomUUID().toString(), conversationId, agentId, reply, System.currentTimeMillis());
+                        UUID.randomUUID().toString(), conversationId, agentId, reply);
                 appendHistory(conversationId, agentMsg);
-                ui.onMessage(conversationId, agentMsg);
+                ui.onMessage(agentMsg);
                 ui.onStatusChange(agentId, AgentState.IDLE, null);
             } catch (Exception e) {
                 log.error("eliza response failed", e);
-                ui.onStatusChange(agentId, AgentState.IDLE, "error: " + e.getMessage());
+                ui.onStatusChange(agentId, AgentState.ERROR_STATE, "error: " + e.getMessage());
             }
         }, 800, TimeUnit.MILLISECONDS);
     }
@@ -123,7 +123,7 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
             switch (cmd) {
                 case "pause"  -> ui.onStatusChange(targetId, AgentState.PAUSED, "user request");
                 case "resume" -> ui.onStatusChange(targetId, AgentState.IDLE, "user request");
-                case "wake"   -> ui.onStatusChange(targetId, AgentState.LIVE, "user request");
+                case "wake"   -> ui.onStatusChange(targetId, AgentState.WORKING, "user request");
                 default -> log.warn("unknown directive: {}", cmd);
             }
         }

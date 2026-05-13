@@ -99,7 +99,8 @@ export const useAgentBridge = create<State & Actions>((set, get) => {
         },
       });
 
-      client.on("onMessage", ({ conversationId, msg }) => {
+      client.on("onMessage", ({ msg }) => {
+        const conversationId = msg.conversationId;
         set((s) => {
           const existing = s.messagesByConversation[conversationId] ?? [];
           return {

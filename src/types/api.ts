@@ -2,7 +2,15 @@
 // Jackson serializes enums as their NAME by default, so use the uppercase
 // string form here too.
 
-export type AgentState = "LIVE" | "PAUSED" | "WAITING" | "BLOCKED" | "IDLE";
+export type AgentState =
+  | "WORKING"
+  | "LISTENING"
+  | "ANSWERING"
+  | "PAUSED"
+  | "WAITING"
+  | "BLOCKED"
+  | "IDLE"
+  | "ERROR_STATE";
 
 export type TargetKind = "AGENT" | "GROUP";
 
@@ -39,7 +47,7 @@ export interface MessageRecord {
 // Notification param payloads — keyed by method name. The Java
 // WebSocketUI sends frames in exactly this shape.
 export interface NotificationParams {
-  onMessage: { conversationId: string; msg: MessageRecord };
+  onMessage: { msg: MessageRecord };
   onStatusChange: { agentId: string; state: AgentState; reason: string | null };
   onInputNeeded: { conversationId: string; agentId: string; prompt: string };
   onAgentAdded: { agent: AgentInfo };

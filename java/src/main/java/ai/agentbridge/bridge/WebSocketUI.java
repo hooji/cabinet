@@ -29,10 +29,8 @@ public class WebSocketUI implements UI {
     }
 
     @Override
-    public void onMessage(String conversationId, MessageRecord msg) {
-        emit("onMessage", Map.of(
-                "conversationId", conversationId,
-                "msg", msg));
+    public void onMessage(MessageRecord msg) {
+        emit("onMessage", Map.of("msg", msg));
     }
 
     @Override

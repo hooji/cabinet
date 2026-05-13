@@ -105,7 +105,7 @@ class ElizaShimTest {
         synchronized void expectMessages(int n) { messagesLatch = new CountDownLatch(n); }
         synchronized void expectStatusChanges(int n) { statusLatch = new CountDownLatch(n); }
 
-        @Override public synchronized void onMessage(String conversationId, MessageRecord msg) {
+        @Override public synchronized void onMessage(MessageRecord msg) {
             messages.add(msg);
             messagesLatch.countDown();
         }
