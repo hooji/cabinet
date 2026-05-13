@@ -2,6 +2,10 @@
 
 Pre-built release artifacts. Drop the ones you need into your project.
 
+**Want everything in one download?** Grab `agent-bridge-0.1.0.zip`. Extracts
+to an `agent-bridge-0.1.0/` directory containing the four files below plus
+this README.
+
 ## Files
 
 | File | Purpose |
