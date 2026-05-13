@@ -27,12 +27,19 @@ export function ConversationPane() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages.length]);
+
+  // Auto-focus the composer when an agent is selected (or when switching
+  // between agents) so the user can start typing without a second click.
+  useEffect(() => {
+    if (agent?.id) textareaRef.current?.focus();
+  }, [agent?.id]);
 
   const canSend =
     connectionState === "connected" &&
@@ -112,6 +119,7 @@ export function ConversationPane() {
       <footer className="border-t border-border p-3">
         <div className="flex items-end gap-2">
           <textarea
+            ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
