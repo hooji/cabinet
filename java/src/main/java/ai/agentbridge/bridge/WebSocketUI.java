@@ -2,6 +2,7 @@ package ai.agentbridge.bridge;
 
 import ai.agentbridge.api.AgentInfo;
 import ai.agentbridge.api.AgentState;
+import ai.agentbridge.api.FileRef;
 import ai.agentbridge.api.GroupSummary;
 import ai.agentbridge.api.MessageRecord;
 import ai.agentbridge.api.MessageReplacement;
@@ -76,6 +77,11 @@ public class WebSocketUI implements UI {
         emit("onGroupUpdate", Map.of(
                 "groupId", groupId,
                 "summary", summary));
+    }
+
+    @Override
+    public void onFileAvailable(FileRef file) {
+        emit("onFileAvailable", Map.of("file", file));
     }
 
     private void emit(String method, Object params) {

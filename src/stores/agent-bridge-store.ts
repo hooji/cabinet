@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { RpcClient, type ConnectionState } from "@/lib/rpc/client";
+import { useFileRegistry } from "@/stores/file-registry-store";
 import type {
   AgentInfo,
   AgentState,
@@ -227,6 +228,9 @@ export const useAgentBridge = create<State & Actions>((set, get) => {
       });
       client.on("onInputNeeded", ({ agentId }) => {
         set((s) => ({ agents: upsertAgentState(s.agents, agentId, "BLOCKED") }));
+      });
+      client.on("onFileAvailable", ({ file }) => {
+        useFileRegistry.getState().put(file);
       });
 
       set({ client, serverUrl: url });

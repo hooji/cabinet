@@ -3,6 +3,7 @@ package ai.agentbridge.shim;
 import ai.agentbridge.api.AgentInfo;
 import ai.agentbridge.api.AgentState;
 import ai.agentbridge.api.AgentSystem;
+import ai.agentbridge.api.FileRef;
 import ai.agentbridge.api.GroupInfo;
 import ai.agentbridge.api.MessageRecord;
 import ai.agentbridge.api.MessageReplacement;
@@ -11,6 +12,15 @@ import ai.agentbridge.api.UI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -108,10 +118,13 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
         ui.onMessage(userMsg);
         ui.onStatusChange(agentId, AgentState.ANSWERING, "composing reply");
 
-        if (text.trim().equalsIgnoreCase("/check")) {
-            runChecklistDemo(conversationId, agentId);
-        } else {
-            streamReply(conversationId, agentId, text);
+        String trimmed = text.trim().toLowerCase();
+        switch (trimmed) {
+            case "/check" -> runChecklistDemo(conversationId, agentId);
+            case "/image" -> runImageDemo(conversationId, agentId);
+            case "/pdf"   -> runPdfDemo(conversationId, agentId);
+            case "/math"  -> runMathDemo(conversationId, agentId);
+            default       -> streamReply(conversationId, agentId, text);
         }
     }
 
@@ -226,6 +239,140 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
                 ui.onMessageReplace(new MessageReplacement(
                         messageId, conversationId, "[x", startAfter, endBefore)),
                 delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    // ─── file-viewer demos (/image, /pdf, /math) ──────────────────────────
+
+    private void runImageDemo(String conversationId, String agentId) {
+        try {
+            String fileId = "eliza-demo-" + UUID.randomUUID() + ".png";
+            byte[] png = renderDemoPng();
+            ui.onFileAvailable(new FileRef(fileId, "image/png", "eliza-demo.png", png));
+
+            String body = "Here's a Nord-themed PNG generated server-side and pushed via " +
+                    "`onFileAvailable`:\n\n" +
+                    "![ELIZA demo](bridge://file/" + fileId + ")";
+            MessageRecord msg = new MessageRecord(
+                    UUID.randomUUID().toString(), conversationId, agentId, body);
+            appendHistory(conversationId, msg);
+            ui.onMessage(msg);
+        } catch (Exception e) {
+            log.error("image demo failed", e);
+            ui.onStatusChange(agentId, AgentState.ERROR_STATE, e.getMessage());
+            return;
+        }
+        scheduler.schedule(
+                () -> ui.onStatusChange(agentId, AgentState.IDLE, null),
+                300, TimeUnit.MILLISECONDS);
+    }
+
+    private void runPdfDemo(String conversationId, String agentId) {
+        try {
+            String fileId = "eliza-demo-" + UUID.randomUUID() + ".pdf";
+            byte[] pdf = renderDemoPdf();
+            ui.onFileAvailable(new FileRef(fileId, "application/pdf", "eliza-demo.pdf", pdf));
+
+            String body = "A tiny PDF generated and pushed via the file registry:\n\n" +
+                    "<iframe src=\"bridge://file/" + fileId + "\" height=\"320\"></iframe>";
+            MessageRecord msg = new MessageRecord(
+                    UUID.randomUUID().toString(), conversationId, agentId, body);
+            appendHistory(conversationId, msg);
+            ui.onMessage(msg);
+        } catch (Exception e) {
+            log.error("pdf demo failed", e);
+            ui.onStatusChange(agentId, AgentState.ERROR_STATE, e.getMessage());
+            return;
+        }
+        scheduler.schedule(
+                () -> ui.onStatusChange(agentId, AgentState.IDLE, null),
+                300, TimeUnit.MILLISECONDS);
+    }
+
+    private void runMathDemo(String conversationId, String agentId) {
+        String body =
+                "A few classics. Inline: $E = mc^2$ and Euler's identity " +
+                "$e^{i\\pi} + 1 = 0$.\n\n" +
+                "Display:\n\n" +
+                "$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$\n\n" +
+                "$$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}$$";
+        MessageRecord msg = new MessageRecord(
+                UUID.randomUUID().toString(), conversationId, agentId, body);
+        appendHistory(conversationId, msg);
+        ui.onMessage(msg);
+        scheduler.schedule(
+                () -> ui.onStatusChange(agentId, AgentState.IDLE, null),
+                300, TimeUnit.MILLISECONDS);
+    }
+
+    private byte[] renderDemoPng() throws IOException {
+        int w = 480, h = 240;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            // Nord background
+            g.setColor(new Color(0x2e3440));
+            g.fillRect(0, 0, w, h);
+            // Accent stripe
+            g.setColor(new Color(0x88c0d0));
+            g.fillRect(0, h - 8, w, 8);
+            // Title
+            g.setColor(new Color(0xeceff4));
+            g.setFont(new Font("SansSerif", Font.BOLD, 36));
+            g.drawString("ELIZA", 30, 80);
+            // Subtitle
+            g.setColor(new Color(0xd08770));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 18));
+            g.drawString("greetings from 1966", 30, 116);
+            // Footer hash
+            g.setColor(new Color(0x88c0d0));
+            g.setFont(new Font("Monospaced", Font.PLAIN, 12));
+            g.drawString("#bridge-file-demo", w - 150, h - 24);
+        } finally {
+            g.dispose();
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", out);
+        return out.toByteArray();
+    }
+
+    private byte[] renderDemoPdf() {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        List<Integer> offsets = new ArrayList<>();
+
+        writeAscii(buf, "%PDF-1.4\n%âãÏÓ\n");
+        offsets.add(buf.size());
+        writeAscii(buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        offsets.add(buf.size());
+        writeAscii(buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        offsets.add(buf.size());
+        writeAscii(buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R " +
+                "/MediaBox [0 0 612 792] /Contents 4 0 R " +
+                "/Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n");
+        String content =
+                "BT\n/F1 24 Tf\n72 720 Td (Hello from the ELIZA shim!) Tj\n" +
+                "0 -36 Td /F1 14 Tf (This PDF was generated server-side) Tj\n" +
+                "0 -20 Td (and shipped to the UI via onFileAvailable.) Tj\n" +
+                "ET";
+        offsets.add(buf.size());
+        writeAscii(buf, "4 0 obj\n<< /Length " + content.length() + " >>\nstream\n"
+                + content + "\nendstream\nendobj\n");
+        offsets.add(buf.size());
+        writeAscii(buf, "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n");
+
+        int xrefAt = buf.size();
+        writeAscii(buf, "xref\n0 6\n0000000000 65535 f \n");
+        for (int off : offsets) {
+            writeAscii(buf, String.format("%010d 00000 n \n", off));
+        }
+        writeAscii(buf, "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xrefAt + "\n%%EOF\n");
+        return buf.toByteArray();
+    }
+
+    private static void writeAscii(ByteArrayOutputStream buf, String s) {
+        byte[] bytes = s.getBytes(StandardCharsets.ISO_8859_1);
+        buf.write(bytes, 0, bytes.length);
     }
 
     // ─── history bookkeeping ──────────────────────────────────────────────

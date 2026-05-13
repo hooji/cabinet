@@ -36,4 +36,19 @@ public interface UI {
     void onAgentRemoved(String agentId);
 
     void onGroupUpdate(String groupId, GroupSummary summary);
+
+    /**
+     * Push a binary file into the UI's in-memory file registry. After this
+     * fires, messages can reference the file via {@code bridge://file/<id>}
+     * (e.g. {@code ![alt](bridge://file/foo.png)} or
+     * {@code <iframe src="bridge://file/doc.pdf"></iframe>}). Files persist
+     * for the lifetime of the page.
+     *
+     * <p>It is safe to call this method <em>before returning</em> from a
+     * synchronous request handler such as
+     * {@link AgentSystem#getHistory}: WebSocket frame ordering guarantees
+     * that the notifications reach the UI before the request response,
+     * so files are cached by the time messages reference them.
+     */
+    void onFileAvailable(FileRef file);
 }

@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 import "@/styles/markdown.css";
+import "katex/dist/katex.min.css";
 
 const inter = Inter({
   variable: "--font-sans",

@@ -45,6 +45,19 @@ export interface MessageRecord {
 }
 
 /**
+ * A binary blob pushed into the UI's in-memory file registry via
+ * `onFileAvailable`. `data` is base64-encoded on the wire (Jackson default
+ * for `byte[]`). Messages reference the file via `bridge://file/<id>`.
+ */
+export interface FileRef {
+  id: string;
+  mimeType: string;
+  name: string | null;
+  /** base64-encoded bytes */
+  data: string;
+}
+
+/**
  * Payload for the onMessageReplace notification. Locates the target message
  * by `id` within `conversationId`, then splices `text` between an optional
  * kept prefix and an optional kept suffix:
@@ -78,6 +91,7 @@ export interface NotificationParams {
   onAgentAdded: { agent: AgentInfo };
   onAgentRemoved: { agentId: string };
   onGroupUpdate: { groupId: string; summary: GroupSummary };
+  onFileAvailable: { file: FileRef };
 }
 
 export type NotificationMethod = keyof NotificationParams;

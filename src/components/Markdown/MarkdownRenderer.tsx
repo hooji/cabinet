@@ -3,10 +3,17 @@
 import React, { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
 import { createHighlighterCoreSync } from "shiki/core";
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
+import {
+  bridgeFileId,
+  useFileRegistry,
+  type BridgeFile,
+} from "@/stores/file-registry-store";
 
 // Pre-loaded themes + languages so the highlighter is fully synchronous.
 // `react-markdown` runs its rehype pipeline via `runSync`, which rejects any
@@ -53,14 +60,18 @@ const highlighter = createHighlighterCoreSync({
  * Used by ConversationPane to render chat message bodies.
  *
  * Pipeline:
+ *   remark-math       -> parses $inline$ and $$display$$ math
  *   remark-gfm        -> tables, task lists, strikethrough, autolinks
- *   rehype-raw        -> allow raw HTML (we use <details> for "Thinking")
+ *   rehype-raw        -> allow raw HTML (we use <details>, <iframe> etc.)
+ *   rehype-katex      -> renders math to HTML (KaTeX)
  *   @shikijs/rehype/core (sync) -> VS Code-grade syntax highlighting (Nord)
  *
+ * Custom URL scheme: `bridge://file/<id>` references a file that the agent
+ * pushed via `onFileAvailable`. The img/iframe/embed overrides below
+ * resolve these through the file-registry store.
+ *
  * Styling lives in `src/styles/markdown.css`, imported once from
- * `src/app/layout.tsx`. The stylesheet is scoped to `.markdown-body`,
- * has a transparent background (so the parent chat bubble's `bg-muted`
- * shows through), and applies a document-style Nord palette.
+ * `src/app/layout.tsx`.
  */
 
 type Props = {
@@ -69,7 +80,6 @@ type Props = {
 };
 
 const components: Components = {
-  // Make external links safe.
   a({ href, children, ...rest }) {
     const isExternal =
       typeof href === "string" && /^https?:\/\//i.test(href);
@@ -85,9 +95,15 @@ const components: Components = {
       </a>
     );
   },
-  // Custom <details class="thinking"> rendering: when collapsed, show the
-  // latest non-empty line from the body next to the "Thinking" label so the
-  // user can peek at what the agent is currently doing without expanding.
+  img(props) {
+    return <BridgeImg {...props} />;
+  },
+  iframe(props) {
+    return <BridgeIframe {...props} />;
+  },
+  embed(props) {
+    return <BridgeEmbed {...props} />;
+  },
   details(props) {
     const className =
       typeof props.className === "string" ? props.className : "";
@@ -98,11 +114,82 @@ const components: Components = {
   },
 };
 
+// ─── bridge:// resolution for img / iframe / embed ────────────────────
+
+/** Subscribe to a file by id; component re-renders when it lands. */
+function useBridgeFile(id: string | null): BridgeFile | undefined {
+  // Touch `version` so any change to the registry re-evaluates the lookup.
+  useFileRegistry((s) => s.version);
+  return useFileRegistry((s) => (id ? s.files.get(id) : undefined));
+}
+
+// react-markdown 10 passes a `node` (hast node) prop alongside the standard
+// HTML attributes; spreading it straight onto the DOM yields a stray
+// `node="[object Object]"` attribute. Strip it from every override.
+type WithNode<P> = P & { node?: unknown };
+
+function stripNode<P extends object>(props: WithNode<P>): P {
+  const { node: _node, ...rest } = props;
+  return rest as P;
+}
+
+function BridgeImg(rawProps: WithNode<React.ImgHTMLAttributes<HTMLImageElement>>) {
+  const props = stripNode(rawProps);
+  const id = bridgeFileId(typeof props.src === "string" ? props.src : null);
+  const file = useBridgeFile(id);
+  if (id === null) return <img {...props} alt={props.alt ?? ""} />;
+  if (!file) {
+    return (
+      <span className="bridge-file-pending" aria-label={`waiting for ${id}`}>
+        [image pending]
+      </span>
+    );
+  }
+  return <img {...props} src={file.objectUrl} alt={props.alt ?? file.name ?? ""} />;
+}
+
+function BridgeIframe(rawProps: WithNode<React.IframeHTMLAttributes<HTMLIFrameElement>>) {
+  const props = stripNode(rawProps);
+  const id = bridgeFileId(typeof props.src === "string" ? props.src : null);
+  const file = useBridgeFile(id);
+  if (id === null) return <iframe {...props} title={props.title ?? ""} />;
+  if (!file) {
+    return (
+      <span className="bridge-file-pending" aria-label={`waiting for ${id}`}>
+        [file pending]
+      </span>
+    );
+  }
+  return (
+    <iframe
+      {...props}
+      src={file.objectUrl}
+      title={props.title ?? file.name ?? id}
+    />
+  );
+}
+
+function BridgeEmbed(rawProps: WithNode<React.EmbedHTMLAttributes<HTMLEmbedElement>>) {
+  const props = stripNode(rawProps);
+  const id = bridgeFileId(typeof props.src === "string" ? props.src : null);
+  const file = useBridgeFile(id);
+  if (id === null) return <embed {...props} />;
+  if (!file) {
+    return (
+      <span className="bridge-file-pending" aria-label={`waiting for ${id}`}>
+        [file pending]
+      </span>
+    );
+  }
+  return <embed {...props} src={file.objectUrl} type={props.type ?? file.mimeType} />;
+}
+
+// ─── ThinkingDetails: collapsible "Thinking" section ──────────────────
+
 function ThinkingDetails(props: React.ComponentProps<"details">) {
   const [open, setOpen] = useState(false);
   const children = React.Children.toArray(props.children);
 
-  // Split: pull out the <summary> child (if present), the rest is the body.
   let summaryContent: React.ReactNode = "Thinking";
   const bodyChildren: React.ReactNode[] = [];
   for (const child of children) {
@@ -110,8 +197,8 @@ function ThinkingDetails(props: React.ComponentProps<"details">) {
       React.isValidElement(child) &&
       (child.type === "summary" || (typeof child.type === "string" && child.type === "summary"))
     ) {
-      const props = child.props as { children?: React.ReactNode };
-      summaryContent = props.children ?? "Thinking";
+      const inner = (child.props as { children?: React.ReactNode }).children;
+      summaryContent = inner ?? "Thinking";
     } else if (typeof child === "string" && child.trim() === "") {
       // Skip whitespace-only text nodes between block elements.
     } else {
@@ -138,7 +225,6 @@ function ThinkingDetails(props: React.ComponentProps<"details">) {
   );
 }
 
-/** Walks React children, returning the text of the last block-ish child. */
 function lastNonEmptyTextLine(children: React.ReactNode[]): string {
   for (let i = children.length - 1; i >= 0; i--) {
     const text = getTextContent(children[i]).trim();
@@ -162,17 +248,23 @@ export function MarkdownRenderer({ children, className }: Props) {
   return (
     <div className={`markdown-body ${className ?? ""}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        // Default urlTransform sanitizes unknown schemes (it strips
+        // bridge://… URLs to empty strings to prevent XSS from
+        // user-generated markdown). The agent backend is trusted in this
+        // app, so pass URLs through untouched.
+        urlTransform={(url) => url}
+        remarkPlugins={[remarkMath, remarkGfm]}
         rehypePlugins={[
-          // rehype-raw must run BEFORE rehype-shiki so raw HTML (like
-          // <details>) becomes part of the tree before code highlighting.
+          // rehype-raw must run before rehype-shiki so raw HTML (like
+          // <details> / <iframe>) becomes part of the tree before code
+          // highlighting. rehype-katex renders math nodes.
           rehypeRaw,
+          rehypeKatex,
           [
             rehypeShikiFromHighlighter,
             highlighter,
             {
               theme: "nord",
-              // Fall back gracefully for code fences with no/unknown language.
               fallbackLanguage: "text",
             },
           ],

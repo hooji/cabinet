@@ -283,6 +283,51 @@
     text-decoration-thickness: 1px;
   }
 
+  /* ----------------------------------------------------------
+     Embedded media (images, iframes, embeds)
+     ----------------------------------------------------------
+     Used by the file-registry viewers — bridge://file/<id> URLs
+     get resolved to object URLs and rendered as <img>, <iframe>,
+     or <embed>. Frame the chrome consistently with code blocks.
+     ---------------------------------------------------------- */
+  .markdown-body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    background: var(--md-bg-elevated);
+  }
+  .markdown-body iframe,
+  .markdown-body embed {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    border: 1px solid var(--md-border-subtle);
+    border-radius: 6px;
+    background: var(--md-bg-elevated);
+  }
+  .markdown-body iframe[height],
+  .markdown-body embed[height] {
+    height: attr(height px, 320px);
+  }
+  /* Placeholder shown while a referenced file hasn't arrived yet. */
+  .markdown-body .bridge-file-pending {
+    display: inline-block;
+    padding: 0.35rem 0.6rem;
+    border: 1px dashed var(--md-border);
+    border-radius: 4px;
+    color: var(--md-text-muted);
+    font-family: var(--md-font-mono);
+    font-size: 0.85em;
+  }
+
+  /* ----------------------------------------------------------
+     Math (KaTeX)
+     ---------------------------------------------------------- */
+  .markdown-body .math-display {
+    overflow-x: auto;
+  }
+
   /* Keyboard */
   .markdown-body kbd {
     font-family: var(--md-font-mono);

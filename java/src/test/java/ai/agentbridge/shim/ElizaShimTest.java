@@ -2,6 +2,7 @@ package ai.agentbridge.shim;
 
 import ai.agentbridge.api.AgentInfo;
 import ai.agentbridge.api.AgentState;
+import ai.agentbridge.api.FileRef;
 import ai.agentbridge.api.GroupSummary;
 import ai.agentbridge.api.MessageRecord;
 import ai.agentbridge.api.MessageReplacement;
@@ -126,5 +127,6 @@ class ElizaShimTest {
         @Override public void onAgentAdded(AgentInfo agent) {}
         @Override public void onAgentRemoved(String agentId) {}
         @Override public void onGroupUpdate(String groupId, GroupSummary summary) {}
+        @Override public void onFileAvailable(FileRef file) {}
     }
 }
