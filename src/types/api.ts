@@ -44,10 +44,35 @@ export interface MessageRecord {
   ts: number;
 }
 
+/**
+ * Payload for the onMessageReplace notification. Locates the target message
+ * by `id` within `conversationId`, then splices `text` between an optional
+ * kept prefix and an optional kept suffix:
+ *
+ *   - If `startReplaceAfter` is non-null, the existing body is searched for
+ *     its first occurrence; the portion up to and including that match is
+ *     preserved as the prefix.
+ *   - If `endReplaceBefore` is non-null, the existing body is searched (from
+ *     past the prefix) for its first occurrence; that match and everything
+ *     after it is preserved as the suffix.
+ *   - If either anchor is set and not found in its search range, the update
+ *     is discarded.
+ *   - Both null = full body replacement.
+ */
+export interface MessageReplacement {
+  id: string;
+  conversationId: string;
+  text: string;
+  startReplaceAfter: string | null;
+  endReplaceBefore: string | null;
+}
+
 // Notification param payloads — keyed by method name. The Java
 // WebSocketUI sends frames in exactly this shape.
 export interface NotificationParams {
   onMessage: { msg: MessageRecord };
+  onMessageAppend: { msg: MessageRecord };
+  onMessageReplace: { replacement: MessageReplacement };
   onStatusChange: { agentId: string; state: AgentState; reason: string | null };
   onInputNeeded: { conversationId: string; agentId: string; prompt: string };
   onAgentAdded: { agent: AgentInfo };

@@ -12,6 +12,21 @@ public interface UI {
      */
     void onMessage(MessageRecord msg);
 
+    /**
+     * Append a delta to an existing message identified by {@code msg.id()}.
+     * If no message with that id exists in the conversation yet, the UI
+     * auto-creates it using {@code msg} as the seed — letting agents skip
+     * a priming {@link #onMessage} call and stream from the first token.
+     */
+    void onMessageAppend(MessageRecord msg);
+
+    /**
+     * Replace some or all of an existing message body. See
+     * {@link MessageReplacement} for the anchor semantics. If the anchors
+     * fail to match, the UI discards the update silently.
+     */
+    void onMessageReplace(MessageReplacement replacement);
+
     void onStatusChange(String agentId, AgentState state, String reason);
 
     void onInputNeeded(String conversationId, String agentId, String prompt);

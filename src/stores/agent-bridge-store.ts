@@ -8,6 +8,7 @@ import type {
   GroupInfo,
   GroupSummary,
   MessageRecord,
+  MessageReplacement,
   TargetKind,
 } from "@/types/api";
 
@@ -72,6 +73,36 @@ function upsertAgentState(
   return changed ? out : agents;
 }
 
+/**
+ * Apply a {@link MessageReplacement} to an existing message body. Returns
+ * the new body, or null if either anchor was specified but not found in
+ * its search range (the update should be discarded).
+ *
+ * Both anchors null → full replacement.
+ * Only startReplaceAfter → keep prefix, replace everything after.
+ * Only endReplaceBefore → replace start, keep suffix.
+ * Both → keep prefix and suffix, splice text between them.
+ */
+export function applyAnchoredReplace(
+  currentText: string,
+  r: MessageReplacement,
+): string | null {
+  let prefix = "";
+  let suffix = "";
+
+  if (r.startReplaceAfter !== null && r.startReplaceAfter !== undefined) {
+    const i = currentText.indexOf(r.startReplaceAfter);
+    if (i === -1) return null;
+    prefix = currentText.slice(0, i + r.startReplaceAfter.length);
+  }
+  if (r.endReplaceBefore !== null && r.endReplaceBefore !== undefined) {
+    const j = currentText.indexOf(r.endReplaceBefore, prefix.length);
+    if (j === -1) return null;
+    suffix = currentText.slice(j);
+  }
+  return prefix + r.text + suffix;
+}
+
 export const useAgentBridge = create<State & Actions>((set, get) => {
   let initialized = false;
 
@@ -107,6 +138,71 @@ export const useAgentBridge = create<State & Actions>((set, get) => {
             messagesByConversation: {
               ...s.messagesByConversation,
               [conversationId]: [...existing, msg],
+            },
+          };
+        });
+      });
+      client.on("onMessageAppend", ({ msg }) => {
+        const conversationId = msg.conversationId;
+        set((s) => {
+          const existing = s.messagesByConversation[conversationId] ?? [];
+          const idx = existing.findIndex((m) => m.id === msg.id);
+          if (idx === -1) {
+            // Auto-create on first append for unknown id — agent skipped
+            // the priming onMessage and is streaming from the first token.
+            return {
+              messagesByConversation: {
+                ...s.messagesByConversation,
+                [conversationId]: [...existing, msg],
+              },
+            };
+          }
+          const next = existing.slice();
+          next[idx] = { ...next[idx], text: next[idx].text + msg.text };
+          return {
+            messagesByConversation: {
+              ...s.messagesByConversation,
+              [conversationId]: next,
+            },
+          };
+        });
+      });
+      client.on("onMessageReplace", ({ replacement }) => {
+        const conversationId = replacement.conversationId;
+        set((s) => {
+          const existing = s.messagesByConversation[conversationId] ?? [];
+          const idx = existing.findIndex((m) => m.id === replacement.id);
+          if (idx === -1) {
+            // Unknown id — anchors can't apply. If neither anchor is set,
+            // auto-create with the replacement text as the initial body.
+            if (
+              replacement.startReplaceAfter == null &&
+              replacement.endReplaceBefore == null
+            ) {
+              const seed: MessageRecord = {
+                id: replacement.id,
+                conversationId,
+                from: "",
+                text: replacement.text,
+                ts: Date.now(),
+              };
+              return {
+                messagesByConversation: {
+                  ...s.messagesByConversation,
+                  [conversationId]: [...existing, seed],
+                },
+              };
+            }
+            return s;
+          }
+          const updatedText = applyAnchoredReplace(existing[idx].text, replacement);
+          if (updatedText === null) return s; // anchor mismatch — discard
+          const next = existing.slice();
+          next[idx] = { ...next[idx], text: updatedText };
+          return {
+            messagesByConversation: {
+              ...s.messagesByConversation,
+              [conversationId]: next,
             },
           };
         });

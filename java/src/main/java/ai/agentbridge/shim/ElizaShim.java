@@ -5,6 +5,7 @@ import ai.agentbridge.api.AgentState;
 import ai.agentbridge.api.AgentSystem;
 import ai.agentbridge.api.GroupInfo;
 import ai.agentbridge.api.MessageRecord;
+import ai.agentbridge.api.MessageReplacement;
 import ai.agentbridge.api.TargetKind;
 import ai.agentbridge.api.UI;
 import org.slf4j.Logger;
@@ -19,13 +20,19 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Stand-in agent system used until the real Java backend lands. Three ELIZA
  * personas live in a single group; sending a message flips the addressed
- * agent to LIVE for a moment and emits a response.
+ * agent to ANSWERING and the reply is streamed (token-by-token via append).
+ *
+ * <p>Default reply emits a small {@code <details class="thinking">} preamble
+ * before the streamed response. Send {@code /check} to instead see the
+ * anchored-replace path: a checklist that ticks itself off over a few
+ * seconds, exercising {@link UI#onMessageReplace}.
  */
 public class ElizaShim implements AgentSystem, AutoCloseable {
 
@@ -101,19 +108,11 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
         ui.onMessage(userMsg);
         ui.onStatusChange(agentId, AgentState.ANSWERING, "composing reply");
 
-        scheduler.schedule(() -> {
-            try {
-                String reply = elizaRespond(agentId, text);
-                MessageRecord agentMsg = new MessageRecord(
-                        UUID.randomUUID().toString(), conversationId, agentId, reply);
-                appendHistory(conversationId, agentMsg);
-                ui.onMessage(agentMsg);
-                ui.onStatusChange(agentId, AgentState.IDLE, null);
-            } catch (Exception e) {
-                log.error("eliza response failed", e);
-                ui.onStatusChange(agentId, AgentState.ERROR_STATE, "error: " + e.getMessage());
-            }
-        }, 800, TimeUnit.MILLISECONDS);
+        if (text.trim().equalsIgnoreCase("/check")) {
+            runChecklistDemo(conversationId, agentId);
+        } else {
+            streamReply(conversationId, agentId, text);
+        }
     }
 
     @Override
@@ -134,10 +133,120 @@ public class ElizaShim implements AgentSystem, AutoCloseable {
         scheduler.shutdownNow();
     }
 
+    // ─── streaming reply ──────────────────────────────────────────────────
+
+    private void streamReply(String conversationId, String agentId, String userText) {
+        String reply = elizaRespond(agentId, userText);
+        boolean withThinking = userText.length() > 15;
+        String messageId = UUID.randomUUID().toString();
+        AtomicReference<String> accumulated = new AtomicReference<>("");
+
+        // Seed with an empty bubble — both for the UI and for the history
+        // placeholder so getHistory always returns a consistent count.
+        MessageRecord seed = new MessageRecord(messageId, conversationId, agentId, "");
+        appendHistory(conversationId, seed);
+        ui.onMessage(seed);
+
+        long t = 0;
+        if (withThinking) {
+            t += 150;
+            scheduleAppend(messageId, conversationId, agentId, accumulated,
+                    "<details class=\"thinking\">\n<summary>Thinking</summary>\n\n", t);
+            String[] lines = {
+                    "Parsing the input…",
+                    "Consulting the 1966 rule table…",
+                    "Reflecting pronouns…",
+            };
+            for (String line : lines) {
+                t += 250;
+                scheduleAppend(messageId, conversationId, agentId, accumulated, line + "\n\n", t);
+            }
+            t += 250;
+            scheduleAppend(messageId, conversationId, agentId, accumulated, "</details>\n\n", t);
+        }
+
+        String[] parts = reply.split(" ");
+        for (int i = 0; i < parts.length; i++) {
+            String chunk = (i == 0 ? "" : " ") + parts[i];
+            t += 80;
+            scheduleAppend(messageId, conversationId, agentId, accumulated, chunk, t);
+        }
+
+        long finalDelay = t + 50;
+        scheduler.schedule(() -> {
+            replaceInHistory(conversationId,
+                    new MessageRecord(messageId, conversationId, agentId, accumulated.get()));
+            ui.onStatusChange(agentId, AgentState.IDLE, null);
+        }, finalDelay, TimeUnit.MILLISECONDS);
+    }
+
+    private void scheduleAppend(String messageId, String conversationId, String agentId,
+                                AtomicReference<String> accumulated, String chunk, long delayMs) {
+        scheduler.schedule(() -> {
+            accumulated.updateAndGet(s -> s + chunk);
+            ui.onMessageAppend(new MessageRecord(messageId, conversationId, agentId, chunk));
+        }, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    // ─── anchored-replace demo (/check) ───────────────────────────────────
+
+    private void runChecklistDemo(String conversationId, String agentId) {
+        String messageId = UUID.randomUUID().toString();
+        String body =
+                "Sure — let's walk through a few steps:\n\n" +
+                "- [ ] Step 1: parse the input\n" +
+                "- [ ] Step 2: choose a response\n" +
+                "- [ ] Step 3: deliver the answer\n";
+
+        MessageRecord seed = new MessageRecord(messageId, conversationId, agentId, body);
+        appendHistory(conversationId, seed);
+        ui.onMessage(seed);
+
+        // Anchors carry enough preceding context that each one is unambiguous
+        // even after previous boxes have been checked.
+        scheduleCheck(messageId, conversationId, "let's walk through a few steps:\n\n- ", "] Step 1",  700);
+        scheduleCheck(messageId, conversationId, "Step 1: parse the input\n- ",           "] Step 2", 1400);
+        scheduleCheck(messageId, conversationId, "Step 2: choose a response\n- ",         "] Step 3", 2100);
+
+        scheduler.schedule(() -> {
+            // Persist the fully-checked final body so getHistory matches.
+            String checked = body
+                    .replaceFirst("\\[ ] Step 1", "[x] Step 1")
+                    .replaceFirst("\\[ ] Step 2", "[x] Step 2")
+                    .replaceFirst("\\[ ] Step 3", "[x] Step 3");
+            replaceInHistory(conversationId,
+                    new MessageRecord(messageId, conversationId, agentId, checked));
+            ui.onStatusChange(agentId, AgentState.IDLE, null);
+        }, 2500, TimeUnit.MILLISECONDS);
+    }
+
+    private void scheduleCheck(String messageId, String conversationId,
+                               String startAfter, String endBefore, long delayMs) {
+        scheduler.schedule(() ->
+                ui.onMessageReplace(new MessageReplacement(
+                        messageId, conversationId, "[x", startAfter, endBefore)),
+                delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    // ─── history bookkeeping ──────────────────────────────────────────────
+
     private void appendHistory(String conversationId, MessageRecord msg) {
         List<MessageRecord> list = history.get(conversationId);
         if (list != null) {
             synchronized (list) { list.add(msg); }
+        }
+    }
+
+    private void replaceInHistory(String conversationId, MessageRecord updated) {
+        List<MessageRecord> list = history.get(conversationId);
+        if (list == null) return;
+        synchronized (list) {
+            for (int i = 0; i < list.size(); i++) {
+                if (list.get(i).id().equals(updated.id())) {
+                    list.set(i, updated);
+                    return;
+                }
+            }
         }
     }
 

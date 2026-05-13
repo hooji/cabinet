@@ -4,6 +4,7 @@ import ai.agentbridge.api.AgentInfo;
 import ai.agentbridge.api.AgentState;
 import ai.agentbridge.api.GroupSummary;
 import ai.agentbridge.api.MessageRecord;
+import ai.agentbridge.api.MessageReplacement;
 import ai.agentbridge.api.UI;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,6 +99,8 @@ class ElizaShimTest {
 
     static class RecordingUI implements UI {
         final List<MessageRecord> messages = new ArrayList<>();
+        final List<MessageRecord> appends = new ArrayList<>();
+        final List<MessageReplacement> replaces = new ArrayList<>();
         final List<String> statusChanges = new ArrayList<>();
         CountDownLatch messagesLatch = new CountDownLatch(0);
         CountDownLatch statusLatch = new CountDownLatch(0);
@@ -108,6 +111,12 @@ class ElizaShimTest {
         @Override public synchronized void onMessage(MessageRecord msg) {
             messages.add(msg);
             messagesLatch.countDown();
+        }
+        @Override public synchronized void onMessageAppend(MessageRecord msg) {
+            appends.add(msg);
+        }
+        @Override public synchronized void onMessageReplace(MessageReplacement replacement) {
+            replaces.add(replacement);
         }
         @Override public synchronized void onStatusChange(String agentId, AgentState state, String reason) {
             statusChanges.add(agentId + ":" + state);

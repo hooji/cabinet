@@ -4,6 +4,7 @@ import ai.agentbridge.api.AgentInfo;
 import ai.agentbridge.api.AgentState;
 import ai.agentbridge.api.GroupSummary;
 import ai.agentbridge.api.MessageRecord;
+import ai.agentbridge.api.MessageReplacement;
 import ai.agentbridge.api.UI;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -31,6 +32,16 @@ public class WebSocketUI implements UI {
     @Override
     public void onMessage(MessageRecord msg) {
         emit("onMessage", Map.of("msg", msg));
+    }
+
+    @Override
+    public void onMessageAppend(MessageRecord msg) {
+        emit("onMessageAppend", Map.of("msg", msg));
+    }
+
+    @Override
+    public void onMessageReplace(MessageReplacement replacement) {
+        emit("onMessageReplace", Map.of("replacement", replacement));
     }
 
     @Override
