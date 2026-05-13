@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useAgentBridge } from "@/stores/agent-bridge-store";
 import { AgentStatusDot } from "./agent-status-dot";
+import { MarkdownRenderer } from "@/components/Markdown/MarkdownRenderer";
 import { cn } from "@/lib/utils";
 import type { MessageRecord } from "@/types/api";
 
@@ -164,71 +163,10 @@ function Message({
       )}
     >
       <div className="rounded-2xl bg-muted text-foreground px-3.5 py-2 text-sm shadow-sm w-full">
-        <MarkdownBubble text={message.text} />
+        <MarkdownRenderer>{message.text}</MarkdownRenderer>
       </div>
       <StatusLine ts={message.ts} text={message.text} />
     </div>
-  );
-}
-
-const MD_COMPONENTS: Components = {
-  p: ({ children }) => <p className="leading-snug my-0.5 first:mt-0 last:mb-0">{children}</p>,
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
-  ul: ({ children }) => <ul className="list-disc pl-5 my-1 space-y-0.5">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal pl-5 my-1 space-y-0.5">{children}</ol>,
-  li: ({ children }) => <li className="leading-snug">{children}</li>,
-  h1: ({ children }) => <h1 className="text-base font-semibold mt-1 mb-1">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-sm font-semibold mt-1 mb-1">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-border pl-3 my-1 text-muted-foreground">
-      {children}
-    </blockquote>
-  ),
-  pre: ({ children }) => (
-    <pre className="rounded bg-background/60 px-2 py-1.5 my-1 text-xs overflow-x-auto">
-      {children}
-    </pre>
-  ),
-  code: ({ className, children }) => {
-    const isBlock = className && /^language-/.test(className);
-    if (isBlock) return <code className={className}>{children}</code>;
-    return (
-      <code className="rounded bg-background/60 px-1 py-0.5 text-[0.85em] font-mono">
-        {children}
-      </code>
-    );
-  },
-  table: ({ children }) => (
-    <div className="overflow-x-auto my-1">
-      <table className="border-collapse text-xs">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-border px-2 py-1 align-top">{children}</td>
-  ),
-  hr: () => <hr className="my-2 border-border" />,
-};
-
-function MarkdownBubble({ text }: { text: string }) {
-  return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
-      {text}
-    </ReactMarkdown>
   );
 }
 

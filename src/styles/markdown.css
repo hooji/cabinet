@@ -1,0 +1,290 @@
+/* ============================================================
+   markdown.css
+   ------------------------------------------------------------
+   Nord-inspired stylesheet for rendered markdown in chat bubbles.
+
+   Scoped to `.markdown-body`. The background is transparent on
+   purpose so the parent chat bubble's `bg-muted` shows through.
+   Fenced code blocks and inline-code chips define their own
+   surface colors.
+
+   Imported once from `src/app/layout.tsx` (alongside globals.css).
+
+   Tailwind v4 compatibility note:
+   v4's `@layer` works identically to v3 for our purposes; this
+   rule set sits inside `@layer components` so it composes
+   correctly with Tailwind utilities and is overridable on a
+   per-call-site basis with a higher-specificity class.
+   ============================================================ */
+
+@layer components {
+  /* ----------------------------------------------------------
+     Design tokens
+     ----------------------------------------------------------
+     Centralised in CSS variables so palette and rhythm can be
+     re-skinned in one place. Values picked to match the
+     One Markdown reference: teal-leaning headings, salmon
+     accents on links and inline code.
+     ---------------------------------------------------------- */
+  .markdown-body {
+    /* Surfaces (background is transparent — see below) */
+    --md-bg-elevated:   #262a32;  /* code blocks, table headers */
+    --md-bg-inline:     #2a2f38;  /* inline <code> chips */
+    --md-border:        #3b4048;
+    --md-border-subtle: #2f343c;
+
+    /* Text */
+    --md-text:          #d8dee9;
+    --md-text-muted:    #9aa3b2;
+    --md-text-strong:   #eceff4;
+
+    /* Accents (Nord-derived) */
+    --md-accent-heading: #88c0d0;
+    --md-accent-bold:    #8fbcbb;
+    --md-accent-link:    #d08770;
+    --md-accent-quote:   #bf616a;
+
+    /* Rhythm — one knob to scale all vertical spacing */
+    --md-block-gap: 1.15rem;
+
+    /* Typography */
+    --md-font-mono: var(--font-mono), ui-monospace, SFMono-Regular,
+      "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    color: var(--md-text);
+    background: transparent;          /* let the bubble's bg-muted show */
+    font-size: 1rem;
+    line-height: 1.65;
+    word-wrap: break-word;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ----------------------------------------------------------
+     Vertical rhythm
+     ----------------------------------------------------------
+     Single rule: every direct block child gets a top margin.
+     Drop the first one. This replaces the per-element my-* /
+     space-y-* classes that the old MD_COMPONENTS map sprinkled.
+     ---------------------------------------------------------- */
+  .markdown-body > * + * {
+    margin-top: var(--md-block-gap);
+  }
+  .markdown-body > *:first-child { margin-top: 0; }
+  .markdown-body > *:last-child  { margin-bottom: 0; }
+
+  /* ----------------------------------------------------------
+     Headings
+     ---------------------------------------------------------- */
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    color: var(--md-accent-heading);
+    font-weight: 700;
+    line-height: 1.25;
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.01em;
+  }
+  .markdown-body > h1:first-child,
+  .markdown-body > h2:first-child {
+    margin-top: 0;
+  }
+  .markdown-body h1 {
+    font-size: 2.25rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--md-border-subtle);
+  }
+  .markdown-body h2 {
+    font-size: 1.65rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--md-border-subtle);
+  }
+  .markdown-body h3 { font-size: 1.30rem; }
+  .markdown-body h4 { font-size: 1.10rem; }
+  .markdown-body h5 { font-size: 1.00rem; }
+  .markdown-body h6 { font-size: 0.95rem; color: var(--md-text-muted); }
+
+  /* ----------------------------------------------------------
+     Inline text
+     ---------------------------------------------------------- */
+  .markdown-body p { margin: 0; }
+
+  .markdown-body strong {
+    color: var(--md-accent-bold);
+    font-weight: 700;
+  }
+  .markdown-body em { font-style: italic; }
+  .markdown-body strong em,
+  .markdown-body em strong {
+    color: var(--md-accent-bold);
+    font-style: italic;
+    font-weight: 700;
+  }
+
+  .markdown-body a {
+    color: var(--md-accent-link);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    transition: color 120ms ease;
+  }
+  .markdown-body a:hover { color: #e5a385; }
+
+  /* ----------------------------------------------------------
+     Inline code
+     ----------------------------------------------------------
+     Shiki wraps fenced blocks in <pre><code>; bare <code> is
+     therefore inline. Padded chip with the salmon accent.
+     ---------------------------------------------------------- */
+  .markdown-body code {
+    font-family: var(--md-font-mono);
+    font-size: 0.9em;
+    color: var(--md-accent-link);
+    background: var(--md-bg-inline);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    border: 1px solid var(--md-border-subtle);
+  }
+
+  /* ----------------------------------------------------------
+     Fenced code blocks (Shiki output)
+     ----------------------------------------------------------
+     Shiki emits <pre class="shiki"> with inline theme colors.
+     Reset the inline-code chip styles on <code> inside <pre>,
+     and apply our own block chrome.
+     ---------------------------------------------------------- */
+  .markdown-body pre {
+    background: var(--md-bg-elevated);
+    border: 1px solid var(--md-border-subtle);
+    border-radius: 8px;
+    padding: 1rem 1.15rem;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .markdown-body pre code {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+    border-radius: 0;
+  }
+  /* Shiki sets its own background on .shiki — let ours show through */
+  .markdown-body pre.shiki,
+  .markdown-body .shiki {
+    background: var(--md-bg-elevated) !important;
+  }
+
+  /* ----------------------------------------------------------
+     Blockquote
+     ---------------------------------------------------------- */
+  .markdown-body blockquote {
+    border-left: 4px solid var(--md-accent-quote);
+    padding: 0.4rem 0 0.4rem 1rem;
+    color: var(--md-text-muted);
+    background: transparent;
+  }
+  .markdown-body blockquote > * + * { margin-top: 0.5rem; }
+  .markdown-body blockquote strong {
+    color: var(--md-accent-bold);
+  }
+
+  /* ----------------------------------------------------------
+     Lists
+     ---------------------------------------------------------- */
+  .markdown-body ul,
+  .markdown-body ol {
+    padding-left: 1.75rem;
+  }
+  .markdown-body ul { list-style: disc; }
+  .markdown-body ol { list-style: decimal; }
+  .markdown-body ul ul { list-style: circle; }
+  .markdown-body ul ul ul { list-style: square; }
+  .markdown-body li + li { margin-top: 0.35rem; }
+  .markdown-body li > ul,
+  .markdown-body li > ol {
+    margin-top: 0.35rem;
+  }
+  .markdown-body li::marker {
+    color: var(--md-text-muted);
+  }
+
+  /* GFM task lists */
+  .markdown-body li.task-list-item {
+    list-style: none;
+    margin-left: -1.25rem;
+  }
+  .markdown-body li.task-list-item input[type="checkbox"] {
+    margin-right: 0.5rem;
+    transform: translateY(1px);
+    accent-color: var(--md-accent-heading);
+  }
+
+  /* ----------------------------------------------------------
+     Tables (GFM)
+     ---------------------------------------------------------- */
+  .markdown-body table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+  .markdown-body th,
+  .markdown-body td {
+    border: 1px solid var(--md-border);
+    padding: 0.5rem 0.85rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .markdown-body thead th {
+    background: var(--md-bg-elevated);
+    font-weight: 700;
+    color: var(--md-text-strong);
+  }
+  .markdown-body tbody tr:nth-child(2n) {
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  /* ----------------------------------------------------------
+     Horizontal rule
+     ---------------------------------------------------------- */
+  .markdown-body hr {
+    border: 0;
+    height: 1px;
+    background: var(--md-border-subtle);
+    margin: 1.75rem 0;
+  }
+
+  /* ----------------------------------------------------------
+     Media
+     ---------------------------------------------------------- */
+  .markdown-body img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+
+  /* Strikethrough (GFM) */
+  .markdown-body del {
+    color: var(--md-text-muted);
+    text-decoration-thickness: 1px;
+  }
+
+  /* Keyboard */
+  .markdown-body kbd {
+    font-family: var(--md-font-mono);
+    font-size: 0.85em;
+    background: var(--md-bg-inline);
+    border: 1px solid var(--md-border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+}
