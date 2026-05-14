@@ -1,6 +1,6 @@
-// Verifies the two bug fixes against the shipped tarball loaded via file://:
-//   - Image bubble auto-scrolls into view after the image loads.
-//   - Textarea retains keyboard focus through the first /image arrival.
+// Verifies scroll-to-bottom + focus-retention against the shipped tarball
+// loaded via file://. Fills the chat first so the auto-scroll actually
+// has work to do.
 
 import { chromium } from "playwright";
 
@@ -13,59 +13,101 @@ await page.waitForSelector("text=connected", { timeout: 8000 });
 await page.click("text=Eliza (Classic)");
 await page.waitForTimeout(400);
 
-// Focus the textarea (matches the user's flow — they're typing in it).
 const textarea = page.locator("textarea");
 await textarea.focus();
 
-async function activeElementTag() {
+async function send(text) {
+  const before = await page.locator(".rounded-2xl").count();
+  await textarea.fill(text);
+  await textarea.press("Enter");
+  await page.waitForFunction(
+    (n) => document.querySelectorAll(".rounded-2xl").length >= n,
+    before + 2,
+    { timeout: 8000 },
+  );
+}
+
+async function activeTag() {
   return await page.evaluate(() => document.activeElement?.tagName ?? "null");
 }
 
-console.log("before /image, activeElement:", await activeElementTag());
+async function scrollState() {
+  return await page.evaluate(() => {
+    const scroll = document.querySelector(".overflow-y-auto");
+    if (!scroll) return null;
+    const bubbles = document.querySelectorAll(".self-start, .self-end");
+    const last = bubbles[bubbles.length - 1];
+    if (!last) return null;
+    const sr = scroll.getBoundingClientRect();
+    const br = last.getBoundingClientRect();
+    return {
+      lastBubbleFullyVisible: br.bottom <= sr.bottom + 1,
+      lastBubbleTopVisible: br.top >= sr.top - 1,
+      distanceFromBottom:
+        scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop,
+      scrollHeight: scroll.scrollHeight,
+      clientHeight: scroll.clientHeight,
+      bubbleHeight: br.height,
+    };
+  });
+}
 
-await textarea.fill("/image");
-await textarea.press("Enter");
+// 1. Fill the chat with several plain-text replies so scrolling is
+//    actually required (each reply is multi-line because ELIZA streams).
+for (let i = 0; i < 6; i++) {
+  await send("My mother always told me to think harder about this.");
+  await page.waitForTimeout(800);
+}
+const sBefore = await scrollState();
+console.log("after 6 messages:", JSON.stringify(sBefore));
+if (!sBefore.lastBubbleFullyVisible) {
+  console.error("✗ auto-scroll FAILED on plain messages");
+  process.exit(1);
+}
+console.log("✓ plain-message auto-scroll works");
 
-// Wait for the image bubble to arrive + image to actually load (naturalWidth > 0).
+// 2. First /image — focus + scroll.
+console.log("\nbefore 1st /image, activeElement:", await activeTag());
+await send("/image");
+// Wait for the image to actually decode (naturalWidth > 0).
 await page.waitForFunction(
-  () => {
-    const imgs = Array.from(document.querySelectorAll("img"));
-    return imgs.some((i) => i.naturalWidth > 0 && i.src.startsWith("blob:"));
-  },
+  () => Array.from(document.querySelectorAll("img")).some(
+    (i) => i.naturalWidth > 0 && i.src.startsWith("blob:"),
+  ),
   { timeout: 6000 },
 );
-// Give the resize observer a tick to re-scroll.
-await page.waitForTimeout(400);
+await page.waitForTimeout(500);
+console.log("after 1st /image, activeElement:", await activeTag());
 
-console.log("after /image (1st), activeElement:", await activeElementTag());
-
-// Test the scroll behavior: is the image bubble fully visible in the
-// viewport? The bubble (last .self-start) bottom should be <= scroll
-// container's bottom.
-const scrollInfo = await page.evaluate(() => {
-  const scroll = document.querySelector(".overflow-y-auto");
-  if (!scroll) return { ok: false, why: "no scroll container" };
-  const lastBubble = document.querySelectorAll(".self-start, .self-end");
-  const last = lastBubble[lastBubble.length - 1];
-  if (!last) return { ok: false, why: "no bubble" };
-  const sr = scroll.getBoundingClientRect();
-  const br = last.getBoundingClientRect();
-  return {
-    ok: br.bottom <= sr.bottom + 1,
-    scrollBottom: sr.bottom,
-    bubbleBottom: br.bottom,
-    bubbleHeight: br.height,
-  };
-});
-console.log("scroll fit:", JSON.stringify(scrollInfo, null, 2));
+const s1 = await scrollState();
+console.log("scroll state after 1st /image:", JSON.stringify(s1));
+if (!s1.lastBubbleFullyVisible) {
+  console.error("✗ image bubble NOT fully scrolled into view");
+  process.exit(1);
+}
+console.log("✓ image bubble fully visible");
 
 await page.screenshot({ path: "screenshots/18-image-scrolled-in.png" });
 
-// Second /image — should also keep focus.
-await textarea.fill("/image");
-await textarea.press("Enter");
-await page.waitForTimeout(1500);
-console.log("after /image (2nd), activeElement:", await activeElementTag());
+// 3. Second /image — focus should still be on textarea.
+console.log("\nbefore 2nd /image, activeElement:", await activeTag());
+await send("/image");
+await page.waitForTimeout(1200);
+console.log("after 2nd /image, activeElement:", await activeTag());
+
+const s2 = await scrollState();
+if (!s2.lastBubbleFullyVisible) {
+  console.error("✗ 2nd image bubble NOT fully scrolled into view");
+  process.exit(1);
+}
+console.log("✓ 2nd image bubble fully visible");
+
+const finalActive = await activeTag();
+if (finalActive !== "TEXTAREA") {
+  console.error(`✗ focus lost — active element is ${finalActive}, expected TEXTAREA`);
+  process.exit(1);
+}
+console.log("✓ focus retained on TEXTAREA");
 
 await browser.close();
-console.log("done");
+console.log("\n✓ all checks passed");

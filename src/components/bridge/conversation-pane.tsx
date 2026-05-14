@@ -30,40 +30,75 @@ export function ConversationPane() {
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Track whether the user is at (or very near) the bottom of the
+  // scrollback. When new content arrives we only auto-scroll if they're
+  // near the bottom, so a user reading older messages isn't yanked away.
+  const userAtBottom = useRef(true);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const onScroll = () => {
+      const distance =
+        scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+      userAtBottom.current = distance < 50;
+    };
+    scroll.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroll.removeEventListener("scroll", onScroll);
+  }, [agent?.id]);
+
   // Auto-scroll: stay anchored to the bottom whenever the content height
   // grows. A plain effect on messages.length isn't enough — when a bubble
-  // contains an <img>, the image hasn't loaded yet at message-arrival time,
-  // so scrollHeight is still being computed without it; the bubble then
-  // grows after the load event, leaving the scroll position stale.
-  // ResizeObserver fires on every content size change (image load,
-  // streaming token, font swap, etc.), and we re-anchor only if the user
-  // is already near the bottom so we don't yank them up mid-scrollback.
+  // contains an <img>, the image hasn't loaded yet at message-arrival
+  // time, so scrollHeight is still being computed without it; the bubble
+  // grows again on the img load event. ResizeObserver fires on every
+  // content size change (image load, streaming token, font swap, etc.).
+  // Deps include agent?.id so the observer re-attaches after the
+  // scroll-container subtree mounts (the no-agent branch early-returns
+  // before rendering it, so on first mount the refs are null).
   useEffect(() => {
     const scroll = scrollRef.current;
     const content = contentRef.current;
     if (!scroll || !content) return;
+    // Snap to bottom whenever the observer fires — but only if the user
+    // hasn't scrolled away from the bottom in the meantime.
     const observer = new ResizeObserver(() => {
-      const distance =
-        scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
-      if (distance < 200) scroll.scrollTop = scroll.scrollHeight;
+      if (userAtBottom.current) {
+        scroll.scrollTop = scroll.scrollHeight;
+      }
     });
     observer.observe(content);
     return () => observer.disconnect();
-  }, []);
+  }, [agent?.id]);
 
-  // Auto-focus the composer when an agent is selected, and re-focus it
-  // when new messages arrive. The latter handles a Safari/Chromium quirk
-  // where the first <img src="blob:..."> load on a fresh page kicks focus
-  // back to <body> during decode. We only refocus if no other interactive
-  // element currently has focus, so we don't steal it from buttons/links.
+  // Auto-focus the composer when an agent is selected (or switched).
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta || !agent?.id) return;
-    const active = document.activeElement;
-    if (active === ta || active === document.body || active === null) {
-      ta.focus();
-    }
-  }, [agent?.id, messages.length]);
+    ta.focus();
+  }, [agent?.id]);
+
+  // The first <img src="blob:..."> load on a fresh page kicks focus off
+  // the textarea down to <body> while the browser decodes the image
+  // (subsequent loads use a warm path and don't blur). Catch the img's
+  // load event in capture phase — load doesn't bubble — and restore
+  // focus if nothing interactive picked it up.
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const onLoad = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (!target || target.tagName !== "IMG") return;
+      if (!scroll.contains(target)) return;
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const active = document.activeElement;
+      if (active === document.body || active === null) {
+        ta.focus();
+      }
+    };
+    document.addEventListener("load", onLoad, true);
+    return () => document.removeEventListener("load", onLoad, true);
+  }, [agent?.id]);
 
   const canSend =
     connectionState === "connected" &&
