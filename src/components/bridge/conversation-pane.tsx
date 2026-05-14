@@ -30,75 +30,93 @@ export function ConversationPane() {
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Track whether the user is at (or very near) the bottom of the
-  // scrollback. When new content arrives we only auto-scroll if they're
-  // near the bottom, so a user reading older messages isn't yanked away.
-  const userAtBottom = useRef(true);
+  // ── Scroll: two writers updating in opposite directions ────────────
+  //
+  // `following.current === true` means "stay anchored to the bottom".
+  // The flag has two independent writers, but they update to *opposite*
+  // values under disjoint conditions, so they can never race:
+  //
+  //   onScroll  → only sets following = TRUE  (when distance < 4)
+  //   onWheel/onKeyDown → only sets following = FALSE (when user scrolls up)
+  //
+  // The reader (ResizeObserver) takes whatever the last writer set.
+  //
+  // Late-firing scroll events from our own programmatic scrolls always
+  // observe distance ≈ 0 → set to true → no-op (already was true).
+  // User-initiated scroll-up sets false immediately on the input event,
+  // before the resulting scroll event fires, so the order doesn't matter.
+  //
+  // 4px is subpixel-rounding tolerance only, not a heuristic for "scrolled
+  // far enough."
+  const following = useRef(true);
+
   useEffect(() => {
     const scroll = scrollRef.current;
     if (!scroll) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) following.current = false;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "PageUp" || e.key === "Home" || e.key === "ArrowUp") {
+        following.current = false;
+      }
+    };
     const onScroll = () => {
       const distance =
         scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
-      userAtBottom.current = distance < 50;
+      if (distance < 4) following.current = true;
     };
+    scroll.addEventListener("wheel", onWheel, { passive: true });
+    scroll.addEventListener("keydown", onKeyDown);
     scroll.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroll.removeEventListener("scroll", onScroll);
+    return () => {
+      scroll.removeEventListener("wheel", onWheel);
+      scroll.removeEventListener("keydown", onKeyDown);
+      scroll.removeEventListener("scroll", onScroll);
+    };
   }, [agent?.id]);
 
-  // Auto-scroll: stay anchored to the bottom whenever the content height
-  // grows. A plain effect on messages.length isn't enough — when a bubble
-  // contains an <img>, the image hasn't loaded yet at message-arrival
-  // time, so scrollHeight is still being computed without it; the bubble
-  // grows again on the img load event. ResizeObserver fires on every
-  // content size change (image load, streaming token, font swap, etc.).
-  // Deps include agent?.id so the observer re-attaches after the
-  // scroll-container subtree mounts (the no-agent branch early-returns
-  // before rendering it, so on first mount the refs are null).
   useEffect(() => {
     const scroll = scrollRef.current;
     const content = contentRef.current;
     if (!scroll || !content) return;
-    // Snap to bottom whenever the observer fires — but only if the user
-    // hasn't scrolled away from the bottom in the meantime.
     const observer = new ResizeObserver(() => {
-      if (userAtBottom.current) {
-        scroll.scrollTop = scroll.scrollHeight;
-      }
+      if (following.current) scroll.scrollTop = scroll.scrollHeight;
     });
     observer.observe(content);
     return () => observer.disconnect();
   }, [agent?.id]);
 
-  // Auto-focus the composer when an agent is selected (or switched).
+  // ── Focus: synchronous blur handler, no async observers ────────────
+  //
+  // The textarea is the focus owner unless something interactive
+  // explicitly takes focus. Browser-internal focus drops (image decode,
+  // layout shifts) blur the textarea with `relatedTarget === null`; we
+  // detect that synchronously and restore on the next microtask, with
+  // two opt-outs:
+  //   1. Another element actually picked up focus (e.g. user clicked a
+  //      button between blur and microtask) — `activeElement` won't be
+  //      body anymore.
+  //   2. The user is mid-drag-selecting text inside a message — taking
+  //      focus would cancel the selection in some browsers.
+  //
+  // Focus on agent change is still useful as an explicit user signal.
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta || !agent?.id) return;
     ta.focus();
   }, [agent?.id]);
 
-  // The first <img src="blob:..."> load on a fresh page kicks focus off
-  // the textarea down to <body> while the browser decodes the image
-  // (subsequent loads use a warm path and don't blur). Catch the img's
-  // load event in capture phase — load doesn't bubble — and restore
-  // focus if nothing interactive picked it up.
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    const onLoad = (e: Event) => {
-      const target = e.target as HTMLElement | null;
-      if (!target || target.tagName !== "IMG") return;
-      if (!scroll.contains(target)) return;
-      const ta = textareaRef.current;
-      if (!ta) return;
+  function handleComposerBlur(e: React.FocusEvent<HTMLTextAreaElement>) {
+    if (e.relatedTarget !== null) return; // user moved focus deliberately
+    queueMicrotask(() => {
       const active = document.activeElement;
-      if (active === document.body || active === null) {
-        ta.focus();
-      }
-    };
-    document.addEventListener("load", onLoad, true);
-    return () => document.removeEventListener("load", onLoad, true);
-  }, [agent?.id]);
+      if (active !== document.body && active !== null) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.toString().length > 0) return;
+      textareaRef.current?.focus();
+    });
+  }
 
   const canSend =
     connectionState === "connected" &&
@@ -183,6 +201,7 @@ export function ConversationPane() {
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onBlur={handleComposerBlur}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
