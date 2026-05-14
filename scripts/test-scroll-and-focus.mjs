@@ -12,11 +12,15 @@
 
 import { chromium } from "playwright";
 
+const URL =
+  process.env.AGENT_BRIDGE_TEST_URL ||
+  "file:///tmp/agent-bridge-ui-0.1.0/index.html";
+
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await ctx.newPage();
 
-await page.goto("file:///tmp/agent-bridge-ui-0.1.0/index.html", { waitUntil: "networkidle" });
+await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForSelector("text=connected", { timeout: 8000 });
 await page.click("text=Eliza (Classic)");
 await page.waitForTimeout(400);
