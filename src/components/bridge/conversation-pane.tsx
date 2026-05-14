@@ -27,19 +27,43 @@ export function ConversationPane() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-scroll: stay anchored to the bottom whenever the content height
+  // grows. A plain effect on messages.length isn't enough — when a bubble
+  // contains an <img>, the image hasn't loaded yet at message-arrival time,
+  // so scrollHeight is still being computed without it; the bubble then
+  // grows after the load event, leaving the scroll position stale.
+  // ResizeObserver fires on every content size change (image load,
+  // streaming token, font swap, etc.), and we re-anchor only if the user
+  // is already near the bottom so we don't yank them up mid-scrollback.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    const scroll = scrollRef.current;
+    const content = contentRef.current;
+    if (!scroll || !content) return;
+    const observer = new ResizeObserver(() => {
+      const distance =
+        scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+      if (distance < 200) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
-  // Auto-focus the composer when an agent is selected (or when switching
-  // between agents) so the user can start typing without a second click.
+  // Auto-focus the composer when an agent is selected, and re-focus it
+  // when new messages arrive. The latter handles a Safari/Chromium quirk
+  // where the first <img src="blob:..."> load on a fresh page kicks focus
+  // back to <body> during decode. We only refocus if no other interactive
+  // element currently has focus, so we don't steal it from buttons/links.
   useEffect(() => {
-    if (agent?.id) textareaRef.current?.focus();
-  }, [agent?.id]);
+    const ta = textareaRef.current;
+    if (!ta || !agent?.id) return;
+    const active = document.activeElement;
+    if (active === ta || active === document.body || active === null) {
+      ta.focus();
+    }
+  }, [agent?.id, messages.length]);
 
   const canSend =
     connectionState === "connected" &&
@@ -103,17 +127,19 @@ export function ConversationPane() {
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto scrollbar-thin px-5 py-4 flex flex-col gap-3"
+        className="flex-1 overflow-y-auto scrollbar-thin px-5 py-4"
       >
-        {messages.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center pt-8">
-            No messages yet. Say hello.
-          </p>
-        ) : (
-          messages.map((m) => (
-            <Message key={m.id} message={m} fromMe={m.from === "user"} />
-          ))
-        )}
+        <div ref={contentRef} className="flex flex-col gap-3">
+          {messages.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center pt-8">
+              No messages yet. Say hello.
+            </p>
+          ) : (
+            messages.map((m) => (
+              <Message key={m.id} message={m} fromMe={m.from === "user"} />
+            ))
+          )}
+        </div>
       </div>
 
       <footer className="border-t border-border p-3">
